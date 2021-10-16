@@ -1,9 +1,75 @@
 #include <Arduino.h>
 
+unsigned int convertToMilliAmps(unsigned int analogReadMeasurement);
+unsigned int getMilliAmps();
+
+const unsigned long CHECK_INTERVAL_MILLIS = 5000;
+const float PEAK_TO_PEAK_RMS_CONVERSION = 0.3536;
+const int SENSOR_PIN = A0;
+const int CURRENT_SAMPLE_DURATION_MILLIS = 500;
+const int CURRENT_SENSOR_MAX_CURRENT_MILLIAMPS = 20000;
+const int CURRENT_SENSOR_RESOLUTION = 1023;
+const int TRIGGER_CURRENT_MILLIAMPS = 100;
+int ledState = LOW;
+unsigned long previousMillis = 0;
+
+
+
 void setup() {
-  // put your setup code here, to run once:
+  Serial.begin(9600);
+  pinMode(LED_BUILTIN, OUTPUT);
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
+
+  unsigned long currentMillis = millis();
+  if ((currentMillis - previousMillis) >= CHECK_INTERVAL_MILLIS) {
+    unsigned int milliAmps = getMilliAmps();
+    Serial.print("measured milliamps: ");
+    Serial.print(milliAmps);
+
+    previousMillis = currentMillis;
+    if (milliAmps >= TRIGGER_CURRENT_MILLIAMPS) {
+      ledState = HIGH;
+      Serial.println("measured more than 100 mA!");
+    } else {
+      (ledState = LOW);
+      // here's where we'd turn off the light/relay.
+      // here's where we'd blink the light 
+      Serial.println("measured less than 100 mA :(");
+    }
+    digitalWrite(LED_BUILTIN, ledState);
+
+  }
+}
+
+unsigned int getMilliAmps() {
+  unsigned int maxAnalogReadObserved = 0;
+  unsigned int minAnalogReadObserved = 1024;
+  unsigned long sampleStartTime = millis();
+  
+  while (millis() < sampleStartTime + CURRENT_SAMPLE_DURATION_MILLIS) {
+    unsigned int sampleValue = analogRead(SENSOR_PIN);
+    if (sampleValue > maxAnalogReadObserved) {
+      maxAnalogReadObserved = sampleValue;
+    } else if (sampleValue < minAnalogReadObserved) {
+      minAnalogReadObserved = sampleValue;
+    }
+
+  }
+
+  Serial.print("max: ");
+  Serial.print(maxAnalogReadObserved);
+  Serial.print(" min: ");
+  Serial.print(minAnalogReadObserved);
+  Serial.print("\n");
+  return convertToMilliAmps(max(maxAnalogReadObserved - minAnalogReadObserved, 0));
+}
+
+// the analogRead value will be between 0 and 1023. of analog values
+// corresponds to a current range of 0 to 20,000 mA.
+// (observed analog measurement/maximum analog measurement) * (20,000 mA for maximum analog measurement) * RMS conversion value
+unsigned int convertToMilliAmps(unsigned int analogReadMeasurement) {
+  return (unsigned int) ((analogReadMeasurement / 1023.0) * CURRENT_SENSOR_MAX_CURRENT_MILLIAMPS * PEAK_TO_PEAK_RMS_CONVERSION);
 }
