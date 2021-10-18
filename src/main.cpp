@@ -4,15 +4,17 @@ unsigned int convertToMilliAmps(unsigned int analogReadMeasurement);
 unsigned int getMilliAmps();
 
 const unsigned long CHECK_INTERVAL_MILLIS = 5000;
+const unsigned long RELAY_SHUTOFF_LAG_MILLIS = 5000; // in practice, this will be much longer than 5s
 const float PEAK_TO_PEAK_RMS_CONVERSION = 0.3536;
 const int SENSOR_PIN = A0;
 const int RELAY_PIN = 3;
 const int CURRENT_SAMPLE_DURATION_MILLIS = 100;
 const int CURRENT_SENSOR_MAX_CURRENT_MILLIAMPS = 20000;
 const int CURRENT_SENSOR_RESOLUTION = 1023;
-const int TRIGGER_CURRENT_MILLIAMPS = 50;
+const int TRIGGER_CURRENT_MILLIAMPS = 100;
 int ledState = LOW;
 unsigned long previousMillis = 0;
+unsigned long turnRelayOffAt = 0;
 
 
 
@@ -36,13 +38,17 @@ void loop() {
     if (milliAmps >= TRIGGER_CURRENT_MILLIAMPS) {
       ledState = HIGH;
       digitalWrite(RELAY_PIN, HIGH);
-      Serial.println("measured more than 50 mA!");
+      Serial.println("measured more than 100 mA!");
     } else {
-      (ledState = LOW);
+      bool wasRelayJustOn = ledState == HIGH;
+      ledState = LOW;
       // here's where we'd turn off the light/relay.
       // here's where we'd blink the light 
-      Serial.println("measured less than 50 mA :(");
+      Serial.println("measured less than 100 mA :(");
       // if we were previously on, wait X seconds before turning off the relay pin.
+      if (wasRelayJustOn) {
+        delay(RELAY_SHUTOFF_LAG_MILLIS);
+      }
       digitalWrite(RELAY_PIN, LOW);
     }
     digitalWrite(LED_BUILTIN, ledState);
