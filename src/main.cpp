@@ -1,28 +1,47 @@
 #include <Arduino.h>
 
+enum RelayState { on, shutting_down, off };
+
 unsigned int convertToMilliAmps(unsigned int analogReadMeasurement);
 unsigned int getMilliAmps();
+uint8_t ledPinValueFromRelayState(RelayState relayState, unsigned long currentMillis);
+uint8_t relayPinValueFromRelayState(RelayState relayState);
+
 
 const unsigned long CHECK_INTERVAL_MILLIS = 5000;
-const unsigned long RELAY_SHUTOFF_LAG_MILLIS = 5000; // in practice, this will be much longer than 5s
+const unsigned long AMPERAGE_FOLLOWER_RELAY_SHUTOFF_LAG_MILLIS = 5000; // in practice, this will be much longer than 5s
+const unsigned long AMPERAGE_SHUTOFF_EVENT_RELAY_SHUTOFF_LAG_MILLIS = 500;
 const float PEAK_TO_PEAK_RMS_CONVERSION = 0.3536;
 const int SENSOR_PIN = A0;
-const int RELAY_PIN = 3;
+const int AMPERAGE_FOLLOWER_RELAY_PIN = 3;
+const int AMPERAGE_FOLLOWER_LED_PIN = LED_BUILTIN; // in practice, this should be 2
+const int AMPERAGE_SHUTOFF_EVENT_RELAY_PIN = 4;
+const int AMPERAGE_SHUTOFF_EVENT_LED_PIN = 5;
 const int CURRENT_SAMPLE_DURATION_MILLIS = 100;
 const int CURRENT_SENSOR_MAX_CURRENT_MILLIAMPS = 20000;
 const int CURRENT_SENSOR_RESOLUTION = 1023;
-const int TRIGGER_CURRENT_MILLIAMPS = 100;
-int ledState = LOW;
+const int TRIGGER_CURRENT_MILLIAMPS = 250;
+
+RelayState amperageFollowerRelayState = off;
+RelayState amperageShutoffEventRelayState = off;
+
 unsigned long previousMillis = 0;
-unsigned long turnRelayOffAt = 0;
+unsigned long turnAmperageFollowerRelayOffAt = 0;
+unsigned long turnAmperageShutoffEventRelayOffAt = 0;
 
 
 
 void setup() {
   Serial.begin(9600);
-  pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW);
+  pinMode(AMPERAGE_FOLLOWER_RELAY_PIN, OUTPUT);
+  pinMode(AMPERAGE_FOLLOWER_LED_PIN, OUTPUT);
+  pinMode(AMPERAGE_SHUTOFF_EVENT_RELAY_PIN, OUTPUT);
+  pinMode(AMPERAGE_SHUTOFF_EVENT_LED_PIN, OUTPUT);
+  
+  digitalWrite(AMPERAGE_FOLLOWER_RELAY_PIN, LOW);
+  digitalWrite(AMPERAGE_FOLLOWER_LED_PIN, LOW);
+  digitalWrite(AMPERAGE_SHUTOFF_EVENT_RELAY_PIN, LOW);
+  digitalWrite(AMPERAGE_SHUTOFF_EVENT_LED_PIN, LOW);
 }
 
 void loop() {
@@ -33,25 +52,39 @@ void loop() {
     unsigned int milliAmps = getMilliAmps();
     Serial.print("measured milliamps: ");
     Serial.print(milliAmps);
+    currentMillis = millis();
 
     previousMillis = currentMillis;
     if (milliAmps >= TRIGGER_CURRENT_MILLIAMPS) {
-      ledState = HIGH;
-      digitalWrite(RELAY_PIN, HIGH);
+      amperageFollowerRelayState = RelayState::on;
       Serial.println("measured more than 100 mA!");
     } else {
-      bool wasRelayJustOn = ledState == HIGH;
-      ledState = LOW;
-      // here's where we'd turn off the light/relay.
-      // here's where we'd blink the light 
       Serial.println("measured less than 100 mA :(");
-      // if we were previously on, wait X seconds before turning off the relay pin.
-      if (wasRelayJustOn) {
-        delay(RELAY_SHUTOFF_LAG_MILLIS);
+      // were we previously on? 
+      switch (amperageFollowerRelayState)
+      {
+      case RelayState::shutting_down:
+        // figure out how to make the lights blink every 250 ms?
+        if (currentMillis > turnAmperageFollowerRelayOffAt) {
+          amperageFollowerRelayState = RelayState::off;
+        }
+      case RelayState::off:
+        if (currentMillis > turnAmperageShutoffEventRelayOffAt) {
+          amperageShutoffEventRelayState = RelayState::off;
+        }
+        break;
+      case RelayState::on:
+        amperageFollowerRelayState = RelayState::shutting_down;
+        turnAmperageFollowerRelayOffAt = currentMillis + AMPERAGE_FOLLOWER_RELAY_SHUTOFF_LAG_MILLIS;
+        amperageShutoffEventRelayState = RelayState::on;
+        turnAmperageShutoffEventRelayOffAt = currentMillis + AMPERAGE_SHUTOFF_EVENT_RELAY_SHUTOFF_LAG_MILLIS; 
+        break;
       }
-      digitalWrite(RELAY_PIN, LOW);
     }
-    digitalWrite(LED_BUILTIN, ledState);
+    digitalWrite(AMPERAGE_FOLLOWER_RELAY_PIN, relayPinValueFromRelayState(amperageFollowerRelayState));
+    digitalWrite(AMPERAGE_FOLLOWER_LED_PIN, ledPinValueFromRelayState(amperageFollowerRelayState, currentMillis));
+    digitalWrite(AMPERAGE_SHUTOFF_EVENT_RELAY_PIN, relayPinValueFromRelayState(amperageShutoffEventRelayState));
+    digitalWrite(AMPERAGE_SHUTOFF_EVENT_LED_PIN, ledPinValueFromRelayState(amperageFollowerRelayState, currentMillis));
   }
 }
 
@@ -87,4 +120,25 @@ unsigned int getMilliAmps() {
 // (observed analog measurement/maximum analog measurement) * (20,000 mA for maximum analog measurement) * RMS conversion value
 unsigned int convertToMilliAmps(unsigned int analogReadMeasurement) {
   return (unsigned int) ((analogReadMeasurement / 1023.0) * CURRENT_SENSOR_MAX_CURRENT_MILLIAMPS * PEAK_TO_PEAK_RMS_CONVERSION);
+}
+
+uint8_t ledPinValueFromRelayState(RelayState relayState, unsigned long currentMillis) {
+  if (relayState == RelayState::off) {
+    return LOW;
+  } else if (relayState == RelayState::on) {
+    return HIGH;
+  }
+
+  unsigned int millis_part = currentMillis % 1000;
+  if (millis_part < 250 || (millis_part > 500 && millis_part < 750)) {
+    return HIGH;
+  }
+  return LOW;
+}
+
+uint8_t relayPinValueFromRelayState(RelayState relayState) {
+  if (relayState == RelayState::on || relayState == RelayState::shutting_down) {
+    return HIGH;
+  }
+  return LOW;
 }
