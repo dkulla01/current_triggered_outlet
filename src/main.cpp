@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <ArduinoLog.h>
 
 enum RelayState { on, shutting_down, off };
 
@@ -42,6 +43,8 @@ void setup() {
   digitalWrite(AMPERAGE_FOLLOWER_LED_PIN, LOW);
   digitalWrite(AMPERAGE_SHUTOFF_EVENT_RELAY_PIN, LOW);
   digitalWrite(AMPERAGE_SHUTOFF_EVENT_LED_PIN, LOW);
+
+  Log.begin(LOG_LEVEL_TRACE, &Serial);
 }
 
 void loop() {
@@ -50,17 +53,16 @@ void loop() {
   unsigned long currentMillis = millis();
   if ((currentMillis - previousMillis) >= CHECK_INTERVAL_MILLIS) {
     unsigned int milliAmps = getMilliAmps();
-    Serial.print("measured milliamps: ");
-    Serial.print(milliAmps);
+    Log.traceln("measured milliamps: %d", milliAmps);
     currentMillis = millis();
 
     previousMillis = currentMillis;
     if (milliAmps >= TRIGGER_CURRENT_MILLIAMPS) {
       amperageFollowerRelayState = RelayState::on;
       amperageShutoffEventRelayState = RelayState::off;
-      Serial.println("measured more than 100 mA!");
+      Log.traceln("measured %d, more than 100 mA!", milliAmps);
     } else {
-      Serial.println("measured less than 100 mA :(");
+      Log.traceln("measured %d, less than 100 mA :(", milliAmps);
       // were we previously on or shutting down? 
       if (amperageFollowerRelayState == RelayState::on) {
         amperageFollowerRelayState = RelayState::shutting_down;
@@ -104,15 +106,15 @@ unsigned int getMilliAmps() {
     }
     samplesCollected++;
   }
-
-  Serial.print("max: ");
-  Serial.print(maxAnalogReadObserved);
-  Serial.print(" min: ");
-  Serial.print(minAnalogReadObserved);
-  Serial.print(" samples collected: ");
-  Serial.print(samplesCollected);
-  Serial.print("\n");
-  return convertToMilliAmps(max(maxAnalogReadObserved - minAnalogReadObserved, 0));
+  unsigned int milliAmps = convertToMilliAmps(max(maxAnalogReadObserved - minAnalogReadObserved, 0));
+  Log.traceln(
+    "min: %d, max: %d, sample count: %d, milliamp conversion: %d",
+    minAnalogReadObserved,
+    maxAnalogReadObserved,
+    samplesCollected,
+    milliAmps
+  );
+  return milliAmps;
 }
 
 // the analogRead value will be between 0 and 1023. of analog values
