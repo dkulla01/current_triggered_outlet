@@ -14,7 +14,7 @@ const unsigned long AMPERAGE_SHUTOFF_EVENT_RELAY_SHUTOFF_LAG_MILLIS = 500;
 const float PEAK_TO_PEAK_RMS_CONVERSION = 0.3536;
 const int SENSOR_PIN = A0;
 const int AMPERAGE_FOLLOWER_RELAY_PIN = 3;
-const int AMPERAGE_FOLLOWER_LED_PIN = LED_BUILTIN; // in practice, this should be 2
+const int AMPERAGE_FOLLOWER_LED_PIN = 2;
 const int AMPERAGE_SHUTOFF_EVENT_RELAY_PIN = 4;
 const int AMPERAGE_SHUTOFF_EVENT_LED_PIN = 5;
 const int CURRENT_SAMPLE_DURATION_MILLIS = 100;
@@ -57,35 +57,35 @@ void loop() {
     previousMillis = currentMillis;
     if (milliAmps >= TRIGGER_CURRENT_MILLIAMPS) {
       amperageFollowerRelayState = RelayState::on;
+      amperageShutoffEventRelayState = RelayState::off;
       Serial.println("measured more than 100 mA!");
     } else {
       Serial.println("measured less than 100 mA :(");
-      // were we previously on? 
-      switch (amperageFollowerRelayState)
-      {
-      case RelayState::shutting_down:
-        // figure out how to make the lights blink every 250 ms?
-        if (currentMillis > turnAmperageFollowerRelayOffAt) {
-          amperageFollowerRelayState = RelayState::off;
-        }
-      case RelayState::off:
-        if (currentMillis > turnAmperageShutoffEventRelayOffAt) {
-          amperageShutoffEventRelayState = RelayState::off;
-        }
-        break;
-      case RelayState::on:
+      // were we previously on or shutting down? 
+      if (amperageFollowerRelayState == RelayState::on) {
         amperageFollowerRelayState = RelayState::shutting_down;
         turnAmperageFollowerRelayOffAt = currentMillis + AMPERAGE_FOLLOWER_RELAY_SHUTOFF_LAG_MILLIS;
         amperageShutoffEventRelayState = RelayState::on;
         turnAmperageShutoffEventRelayOffAt = currentMillis + AMPERAGE_SHUTOFF_EVENT_RELAY_SHUTOFF_LAG_MILLIS; 
-        break;
       }
     }
-    digitalWrite(AMPERAGE_FOLLOWER_RELAY_PIN, relayPinValueFromRelayState(amperageFollowerRelayState));
-    digitalWrite(AMPERAGE_FOLLOWER_LED_PIN, ledPinValueFromRelayState(amperageFollowerRelayState, currentMillis));
-    digitalWrite(AMPERAGE_SHUTOFF_EVENT_RELAY_PIN, relayPinValueFromRelayState(amperageShutoffEventRelayState));
-    digitalWrite(AMPERAGE_SHUTOFF_EVENT_LED_PIN, ledPinValueFromRelayState(amperageFollowerRelayState, currentMillis));
   }
+  
+  if (amperageFollowerRelayState == RelayState::shutting_down
+      && currentMillis > turnAmperageFollowerRelayOffAt) {
+      amperageFollowerRelayState = RelayState::off;
+  }
+  
+  if (currentMillis > turnAmperageShutoffEventRelayOffAt
+      && (amperageFollowerRelayState == RelayState::off || amperageFollowerRelayState == RelayState::shutting_down)) {
+    amperageShutoffEventRelayState = RelayState::off;
+  }
+
+
+  digitalWrite(AMPERAGE_FOLLOWER_RELAY_PIN, relayPinValueFromRelayState(amperageFollowerRelayState));
+  digitalWrite(AMPERAGE_FOLLOWER_LED_PIN, ledPinValueFromRelayState(amperageFollowerRelayState, currentMillis));
+  digitalWrite(AMPERAGE_SHUTOFF_EVENT_RELAY_PIN, relayPinValueFromRelayState(amperageShutoffEventRelayState));
+  digitalWrite(AMPERAGE_SHUTOFF_EVENT_LED_PIN, ledPinValueFromRelayState(amperageShutoffEventRelayState, currentMillis));
 }
 
 unsigned int getMilliAmps() {
